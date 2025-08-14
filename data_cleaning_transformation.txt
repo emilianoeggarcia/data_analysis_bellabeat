@@ -1,0 +1,231 @@
+# Código SQL usado en etapas II y III (Limpieza y transformacion) 
+
+# % de datos faltantes
+SELECT
+ SUM (IF (WeightKg IS NULL, 1, 0)) / COUNT(*) AS perc_WeigthKG_miss
+FROM
+ proyecto-capstone-1.fitbit_dataset.weigth_info_0304
+
+SELECT
+ SUM (IF (WeightKg IS NULL, 1, 0)) / COUNT(*) AS perc_WeigthKG_miss
+FROM
+ proyecto-capstone-1.fitbit_dataset.weigth_info_0405
+
+# Unificar tablas para crear daily_activity_all
+CREATE OR REPLACE TABLE proyecto-capstone-1.fitbit_dataset.daily_activity_all AS 
+SELECT
+ Id, 
+ ActivityDate,
+ TotalSteps,
+ TotalDistance,
+ Calories,
+ "03-04" AS source_period
+FROM 
+ proyecto-capstone-1.fitbit_dataset.daily_activity_0304
+UNION ALL
+ SELECT
+  Id,
+  ActivityDate,
+  TotalSteps,
+  TotalDistance,
+  Calories,
+  "04-05" AS source_period
+ FROM
+  proyecto-capstone-1.fitbit_dataset.daily_activity_0405
+ 
+# Unificar tablas para crear weighEt_info_all
+CREATE OR REPLACE TABLE proyecto-capstone-1.fitbit_dataset.weight_info_all AS 
+SELECT
+ Id, 
+ Date,
+ WeightKg,
+ "03-04" AS source_period
+FROM 
+ proyecto-capstone-1.fitbit_dataset.weigth_info_0304
+UNION ALL
+ SELECT
+  Id,
+  Date,
+  WeightKg,
+ "04-05" AS source_period
+ FROM
+  proyecto-capstone-1.fitbit_dataset.weigth_info_0405
+
+# Revisamos duplicados en daily_activity_all --> SON 24
+SELECT
+ Id, 
+ ActivityDate,
+ COUNT (*) AS registros
+FROM 
+ proyecto-capstone-1.fitbit_dataset.daily_activity_all
+GROUP BY
+ Id,
+ ActivityDate
+HAVING
+ COUNT (*) > 1
+
+# Revisamos duplicados en weight_info_all --> SON 2
+SELECT
+ Id, 
+ Date,
+ COUNT (*) AS registros
+FROM 
+ proyecto-capstone-1.fitbit_dataset.weight_info_all
+GROUP BY
+ Id,
+ Date
+HAVING
+ COUNT (*) > 1
+
+# Revisamos duplicados en sleep_day --> SON 3
+SELECT
+ Id, 
+ SleepDay,
+ COUNT (*) AS registros
+FROM 
+ proyecto-capstone-1.fitbit_dataset.sleep_day
+GROUP BY
+ Id,
+ SleepDay
+HAVING
+ COUNT (*) > 1
+
+# Creamos una unica tabla, en base a las 3 con las que venimos trabajando (daily_activity_all, sleep_day y weight_info_all) 
+CREATE OR REPLACE TABLE
+ proyecto-capstone-1.fitbit_dataset.master_table AS
+ SELECT
+  daily_activity_all.Id,
+  daily_activity_all.ActivityDate,
+  daily_activity_all.TotalSteps,
+  daily_activity_all.TotalDistance,
+  daily_activity_all.Calories,
+  sleep_day.TotalMinutesAsleep,
+  weight_info_all.WeightKg,
+  daily_activity_all.source_period
+ FROM
+  proyecto-capstone-1.fitbit_dataset.daily_activity_all 
+ LEFT JOIN
+  proyecto-capstone-1.fitbit_dataset.sleep_day
+  ON 
+   daily_activity_all.Id = sleep_day.Id
+  AND 
+   DATE (daily_activity_all.ActivityDate) = DATE (sleep_day.SleepDay)
+  LEFT JOIN
+  proyecto-capstone-1.fitbit_dataset.weight_info_all
+  ON 
+   daily_activity_all.Id = weight_info_all.Id
+  AND 
+   DATE (daily_activity_all.ActivityDate) = DATE (weight_info_all.Date)
+   
+# Revisamos por duplicados en la nueva tabla --> 27 
+SELECT
+ Id, 
+ ActivityDate,
+ COUNT (*) AS registros
+FROM 
+ proyecto-capstone-1.fitbit_dataset.master_table
+GROUP BY
+ Id,
+ ActivityDate
+HAVING
+ COUNT (*) > 1
+
+# Creamos la master_table_clean, con los datos duplicados eliminados
+CREATE OR REPLACE TABLE
+ proyecto-capstone-1.fitbit_dataset.master_table_clean AS
+SELECT 
+ Id,
+ ActivityDate,
+ SUM (TotalSteps) AS TotalSteps,
+ SUM (TotalDistance) AS TotalDistance,
+ SUM (Calories) AS Calories,
+ SUM (TotalMinutesAsleep) AS TotalMinutesAsleep,
+ MAX (WeightKg) AS WeightKg,
+ MAX (source_period) AS SourcePeriod
+FROM 
+ proyecto-capstone-1.fitbit_dataset.master_table
+GROUP BY
+ Id,
+ ActivityDate
+ORDER BY
+ Id,
+ ActivityDate
+
+# Revisamos por duplicados en la nueva tabla --> 0
+SELECT
+ Id, 
+ ActivityDate,
+ COUNT (*) AS registros
+FROM 
+ proyecto-capstone-1.fitbit_dataset.master_table_clean
+GROUP BY
+ Id,
+ ActivityDate
+HAVING
+ COUNT (*) > 1
+
+# Reviasmos valores faltantes para la tabla en general
+SELECT
+ COUNT (*) AS total_registros,
+ SUM (CASE
+    WHEN TotalMinutesAsleep IS NULL
+    THEN 1
+    ELSE 0
+    END) AS faltantes_sleep,
+  ROUND (100 * ( SUM (CASE
+    WHEN TotalMinutesAsleep IS NULL
+    THEN 1
+    ELSE 0
+    END)) / COUNT (*), 2)  AS pct_faltantes_sleep,
+   SUM (CASE
+    WHEN WeightKg IS NULL
+    THEN 1
+    ELSE 0
+    END) AS faltantes_peso,
+  ROUND (100 * (   SUM (CASE
+    WHEN WeightKg IS NULL
+    THEN 1
+    ELSE 0
+    END)) / COUNT (*), 2)  AS pct_faltantes_peso
+FROM
+ proyecto-capstone-1.fitbit_dataset.master_table_clean
+
+# Reviasmos valores faltantes para usuarios
+SELECT
+ COUNT (*) AS dias_totales,
+ SUM (CASE
+    WHEN TotalMinutesAsleep IS NULL
+    THEN 1
+    ELSE 0
+    END) AS dias_faltantes_sleep,
+  ROUND (100 * ( SUM (CASE
+    WHEN TotalMinutesAsleep IS NULL
+    THEN 1
+    ELSE 0
+    END)) / COUNT (*), 2)  AS pct_faltantes_sleep,
+  SUM (CASE
+    WHEN WeightKg IS NULL
+    THEN 1
+    ELSE 0
+    END) AS dias_faltantes_peso,
+  ROUND (100 * (   SUM (CASE
+    WHEN WeightKg IS NULL
+    THEN 1
+    ELSE 0
+    END)) / COUNT (*), 2)  AS pct_faltantes_peso
+FROM
+ proyecto-capstone-1.fitbit_dataset.master_table_clean
+GROUP BY
+ Id
+ORDER BY
+ pct_faltantes_sleep DESC
+
+# Revisamos valores faltantes para TotalDistance
+SELECT
+ COUNT (*) AS total_registros,
+ COUNTIF (TotalDistance IS NULL) AS faltantes_distance,
+ ROUND (COUNTIF (TotalDistance IS NULL) * 100 / COUNT (*), 2) AS pct_faltantes_distance
+FROM
+ proyecto-capstone-1.fitbit_dataset.master_table_clean
+
+
