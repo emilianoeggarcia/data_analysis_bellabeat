@@ -10,7 +10,7 @@ This repository contains the final version of the capstone project for the Googl
 ## Tools Used
 - **Data Cleaning & Transformation:** SQL (Google BigQuery)  
 - **Data Analysis & Visualization:** R (RStudio)  
-- **Presentation:** PowerPoint and R Markdown
+- **Presentation:** Canva and R Markdown
 
 ## Content 
 This repository includes the following files and resources:
